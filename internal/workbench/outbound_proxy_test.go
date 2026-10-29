@@ -831,3 +831,53 @@ func mustJSON(t *testing.T, value any) []byte {
 	}
 	return data
 }
+
+func TestAHostCanBeReachedThroughAProxyCommand(t *testing.T) {
+	world, options := proxyWorld(t)
+	state := newTestState(t, options)
+	state.Click(hitAddHost)
+	typeInto(state, hitDialogLabel, "Tunnel")
+	typeInto(state, hitDialogAddress, "ssh.example.com")
+	typeInto(state, hitDialogUser, "ops")
+	state.Click(hitHostProxyConfigure)
+	state.Click(hitProxyKindCommand)
+	typeInto(state, hitOutboundProxyAddress, "cloudflared access ssh --hostname %x")
+	state.Click(hitOutboundProxySubmit)
+	if state.modal != modalOutboundProxy || state.proxyForm.dialogError == "" {
+		t.Fatalf("an unknown token was accepted: modal=%d error=%q", state.modal, state.proxyForm.dialogError)
+	}
+	state.proxyForm.address = *text.NewEditor(`"C:\Program Files (x86)\cloudflared\cloudflared.exe" access ssh --hostname %h`)
+	state.Click(hitOutboundProxySubmit)
+	state.Click(hitDialogSubmit)
+	added := state.hosts[len(state.hosts)-1]
+	if state.modal != modalNone || added.Proxy == nil || added.Proxy.kind != sshconn.ProxyCommand || added.Proxy.user != "" {
+		t.Fatalf("saved host proxy = %+v modal=%d error=%q", added.Proxy, state.modal, state.dialogError)
+	}
+
+	restarted := newTestState(t, options)
+	restored := mustHostLabel(t, restarted, "Tunnel")
+	if restored.Proxy == nil || restored.Proxy.kind != sshconn.ProxyCommand || restored.Proxy.address != added.Proxy.address {
+		t.Fatalf("restored host proxy = %+v", restored.Proxy)
+	}
+	restarted.selectedHostID = restored.ID
+	openHost(restarted)
+	if proxy := world.configs[len(world.configs)-1].Proxy; proxy == nil || proxy.Kind != sshconn.ProxyCommand || proxy.Command != added.Proxy.address || proxy.Address != "" {
+		t.Fatalf("dialed through %+v", proxy)
+	}
+}
+
+func TestAProxyCommandIsNeverTheGlobalProxy(t *testing.T) {
+	_, options := proxyWorld(t)
+	state := newTestState(t, options)
+	state.openOutboundProxyDialog()
+	state.Click(hitProxyKindCommand)
+	if state.proxyForm.kind == sshconn.ProxyCommand {
+		t.Fatal("the global proxy dialog took a command")
+	}
+	if decoded := decodeOutboundProxy(&savedOutboundProxy{Kind: "command", Address: "nc %h %p"}); decoded.kind != sshconn.ProxyNone {
+		t.Fatalf("a saved global proxy command was restored as %+v", decoded)
+	}
+	if restoredHostProxy(&savedOutboundProxy{Kind: "command", Address: "nc %h\n%p"}) != nil {
+		t.Fatal("a damaged saved proxy command was restored")
+	}
+}

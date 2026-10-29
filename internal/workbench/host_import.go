@@ -10,6 +10,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"motty/internal/i18n"
 	"motty/internal/sshconfig"
+	"motty/internal/sshconn"
 )
 
 const maxVisibleHostImportWarnings = 7
@@ -135,7 +136,24 @@ func (builder *hostImportBuilder) addSourceHost(source sshconfig.Host) {
 	builder.aliasIDs[strings.ToLower(source.Alias)] = host.ID
 	if !added {
 		builder.plan.duplicateHosts++
+		return
 	}
+	if source.ProxyCommand != "" {
+		builder.addProxyCommand(source)
+	}
+}
+
+// addProxyCommand gives the host just added the source's ProxyCommand as its
+// own proxy, and says so: the command runs here whenever the host connects.
+func (builder *hostImportBuilder) addProxyCommand(source sshconfig.Host) {
+	m := builder.state.messages
+	if sshconn.CheckProxyCommand(source.ProxyCommand) != nil {
+		builder.warn(fmt.Sprintf(m.SSHConfigWarningProxyCommandFmt, source.Alias))
+		return
+	}
+	host := &builder.plan.hosts[len(builder.plan.hosts)-1]
+	host.Proxy = &outboundProxy{kind: sshconn.ProxyCommand, address: source.ProxyCommand}
+	builder.warn(fmt.Sprintf(m.SSHConfigProxyCommandFmt, source.Alias))
 }
 
 func (builder *hostImportBuilder) addIdentity(path string) {

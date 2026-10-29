@@ -257,6 +257,9 @@ var EnglishMessages = Messages{
 	SSHConfigWarningProxyFmt:    "Could not safely map ProxyJump for %s.",
 	SSHConfigWarningMoreFmt:     "%d more warnings",
 
+	SSHConfigProxyCommandFmt:        "%s connects through its ProxyCommand, which runs on this computer.",
+	SSHConfigWarningProxyCommandFmt: "Skipped the ProxyCommand of %s: only %%h, %%p, %%r and %%%% can be filled in.",
+
 	DialogTitle:                 "New Host",
 	EditHostTitle:               "Edit Host",
 	CopyHostTitle:               "Copy Host",
@@ -1231,6 +1234,11 @@ var englishTools = ToolsMessages{
 	HostProxyDialogTitle:        "Host proxy forwarding",
 	HostProxyDialogDescription:  "Choose how this host reaches its first network endpoint.",
 	HostProxyPasswordNotCarried: "The saved proxy password was not copied because saved passwords are locked.",
+
+	ProxyCommand:                   "Command",
+	ProxyCommandField:              "Command (%h host, %p port, %r user)",
+	ProxyErrorCommand:              "Enter the command on one line. Only %h, %p and %r are filled in, and %% for a percent sign.",
+	HostProxyCommandDescriptionFmt: "This computer runs %s to carry this host's first connection.",
 
 	SearchPlaceholder: "Search settings",
 	SearchTitle:       "Search results",

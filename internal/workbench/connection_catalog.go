@@ -229,6 +229,9 @@ func (catalog *hostCatalog) proxyWithPassword(saved outboundProxy, passwordSecre
 	if saved.kind == sshconn.ProxyNone || saved.address == "" {
 		return nil
 	}
+	if saved.kind == sshconn.ProxyCommand {
+		return &sshconn.Proxy{Kind: saved.kind, Command: saved.address, Bypass: splitBypass(saved.bypass)}
+	}
 	proxy := &sshconn.Proxy{Kind: saved.kind, Address: saved.address, Username: saved.user, Bypass: splitBypass(saved.bypass)}
 	if saved.user != "" && env.Passwords != nil {
 		password, found, err := env.Passwords.Get(passwordSecret)
@@ -368,7 +371,8 @@ func decodeOutboundProxy(entry *savedOutboundProxy) outboundProxy {
 		return outboundProxy{}
 	}
 	kind := proxyKindFromString(entry.Kind)
-	if kind != sshconn.ProxyNone && !validProxyAddress(entry.Address) {
+	// A proxy command is a host's own setting, never the global proxy.
+	if kind == sshconn.ProxyCommand || kind != sshconn.ProxyNone && !validProxyAddress(entry.Address) {
 		kind = sshconn.ProxyNone
 	}
 	proxy := outboundProxy{kind: kind, bypass: strings.TrimSpace(entry.Bypass)}

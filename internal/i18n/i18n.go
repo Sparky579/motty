@@ -275,6 +275,11 @@ type Messages struct {
 	SSHConfigWarningProxyFmt    string
 	SSHConfigWarningMoreFmt     string
 
+	// The import notes each host that came with a ProxyCommand, since that
+	// command runs on this computer when the host connects.
+	SSHConfigProxyCommandFmt        string
+	SSHConfigWarningProxyCommandFmt string
+
 	// New Host dialog.
 	DialogTitle                 string
 	EditHostTitle               string
