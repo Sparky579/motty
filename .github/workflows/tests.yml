@@ -9,9 +9,12 @@ on:
 permissions:
   contents: read
 
+# A superseded run is cancelled, pushes to main included: a newer push to the
+# same ref contains everything the older one would have tested, and leaving the
+# older run in place makes the newer one wait for ten jobs it cannot use.
 concurrency:
   group: go-tests-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   quality:
