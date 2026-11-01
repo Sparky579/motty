@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -892,5 +895,32 @@ func TestAProxyCommandRunsOnlyWhereTheCallerAllowsIt(t *testing.T) {
 	unconfirmed.Proxy = &outboundProxy{kind: sshconn.ProxyCommand, address: "nc %h %p", unconfirmed: true}
 	if proxy := catalog.proxyForHost(unconfirmed, connectEnv{}); proxy == nil || proxy.Err == nil {
 		t.Fatalf("an unconfirmed command runs when the caller gives no message for it: %+v", proxy)
+	}
+}
+
+// A Telnet host signs in as nobody to the proxy command, unless the command is
+// told the account: %r must name the host's own user, as it does for SSH.
+func TestAProxyCommandOfATelnetHostNamesTheHostsUser(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the proxy command here is a Unix program")
+	}
+	directory := t.TempDir()
+	host := Host{Address: "tel.example.com", Port: 23, User: "operator", Protocol: protocolTelnet}
+	proxy := &sshconn.Proxy{Kind: sshconn.ProxyCommand, Command: "touch " + directory + "/%r"}
+	session, err := openStream(context.Background(), streamRequest{Host: host, Timeout: 2 * time.Second, Proxy: proxy, Notify: func() {}})
+	if err == nil {
+		defer session.Close()
+	}
+	// The program carries no connection and only leaves a mark; it runs on its
+	// own, so wait for the mark of the user it was started for.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(directory + "/operator"); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the proxy command was not started for the host's user")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

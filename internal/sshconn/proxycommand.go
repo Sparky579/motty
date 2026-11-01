@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // A proxy command is a local program whose standard input and output carry the
@@ -56,6 +57,9 @@ func ExpandProxyCommand(command, host string, port int, user string) (string, er
 		case 'p':
 			line.WriteString(strconv.Itoa(port))
 		case 'r':
+			if user == "" {
+				return "", errors.New("the proxy command uses %r, but this host has no user name")
+			}
 			line.WriteString(user)
 		case '%':
 			line.WriteByte('%')
@@ -85,10 +89,14 @@ func checkProxyCommandLine(command string) error {
 }
 
 // plainProxyValue reports whether a host or user name is made only of letters,
-// digits and the punctuation of addresses and accounts.
+// digits and the punctuation of addresses and accounts, and cannot be read as an
+// option by the program it is given to: OpenSSH refuses a leading dash too.
 func plainProxyValue(value string) bool {
+	if strings.HasPrefix(value, "-") {
+		return false
+	}
 	for _, r := range value {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune(".-_:@[]+", r) {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune(".-_:@+", r) {
 			return false
 		}
 	}
@@ -122,7 +130,8 @@ func (proxy *Proxy) dialCommand(ctx context.Context, host string, port int, user
 	// A program the command left running must not hold the wait open forever
 	// through the error output it inherited.
 	process.WaitDelay = time.Second
-	if err := process.Start(); err != nil {
+	tree, err := startProxyCommand(process)
+	if err != nil {
 		return nil, fmt.Errorf("start the proxy command: %w", err)
 	}
 	// The process's pipes do not take deadlines on every platform; a pipe in
@@ -130,7 +139,7 @@ func (proxy *Proxy) dialCommand(ctx context.Context, host string, port int, user
 	near, far := net.Pipe()
 	conn := &commandConn{
 		Conn: near, remote: commandAddr(net.JoinHostPort(host, strconv.Itoa(port))),
-		process: process, exited: make(chan struct{}),
+		process: process, tree: tree, exited: make(chan struct{}),
 	}
 	go func() {
 		_, _ = io.Copy(stdin, far)
@@ -140,10 +149,20 @@ func (proxy *Proxy) dialCommand(ctx context.Context, host string, port int, user
 		_, _ = io.Copy(far, stdout)
 		err := process.Wait()
 		conn.failure = proxyCommandFailure(err, stderr.String())
+		tree.release()
 		close(conn.exited)
 		far.Close()
 	}()
 	return conn, nil
+}
+
+// proxyCommandTree is the program a proxy command started and every process it
+// started in turn: a pipeline, a wrapper script or a connector's helper would
+// otherwise outlive the connection that asked for them. kill ends them all;
+// release lets go of what tracks them once the program is gone, and may be
+// called more than once.
+type proxyCommandTree struct {
+	kill, release func()
 }
 
 // commandConn is a running proxy command as a connection. Closing it ends the
@@ -152,6 +171,8 @@ type commandConn struct {
 	net.Conn
 	remote  commandAddr
 	process *exec.Cmd
+	// tree ends the program and whatever it started.
+	tree proxyCommandTree
 	// exited is closed once the program has ended; failure then says why, when
 	// it ended badly.
 	exited  chan struct{}
@@ -177,7 +198,8 @@ func (conn *commandConn) Close() error {
 	conn.once.Do(func() {
 		conn.closing.Store(true)
 		conn.Conn.Close()
-		_ = conn.process.Process.Kill()
+		conn.tree.kill()
+		conn.tree.release()
 	})
 	return nil
 }
@@ -206,13 +228,22 @@ func proxyCommandFailure(err error, stderr string) error {
 	return fmt.Errorf("the proxy command failed (%w): %s", err, last)
 }
 
-// lastLine is the last line of a program's output that says something, cut to
-// a length an error message can carry.
+// lastLine is the last line of a program's output that says something, with
+// control characters dropped and cut to a length an error message can carry.
 func lastLine(output string) string {
 	lines := strings.Split(strings.TrimSpace(output), "\n")
-	last := strings.TrimSpace(lines[len(lines)-1])
+	last := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(lines[len(lines)-1]))
 	if len(last) > 300 {
-		last = last[:300] + "…"
+		cut := 300
+		for cut > 0 && !utf8.RuneStart(last[cut]) {
+			cut--
+		}
+		last = last[:cut] + "…"
 	}
 	return last
 }

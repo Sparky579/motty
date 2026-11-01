@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // The test binary doubles as a proxy command: with relayEnv set it relays its
@@ -68,6 +69,10 @@ func TestExpandingAProxyCommand(t *testing.T) {
 		{command: "connect %h", host: "h;reboot", err: "cannot be given"},
 		{command: "connect %h", host: "$(id)", err: "cannot be given"},
 		{command: "connect %r", host: "h", user: "a b", err: "cannot be given"},
+		{command: "nc %h %p", host: "-oProxyCommand=x", err: "cannot be given"},
+		{command: "connect %r", host: "h", user: "-lroot", err: "cannot be given"},
+		{command: "connect %h", host: "[::1]", err: "cannot be given"},
+		{command: "ssh -W %h:%p %r@gateway", host: "inner", err: "no user name"},
 		{command: "  ", host: "h", err: "empty"},
 		{command: "connect\n%h", host: "h", err: "one line"},
 	} {
@@ -124,5 +129,13 @@ func TestAProxyCommandIsUsedOnlyWhenItHasACommand(t *testing.T) {
 	proxy := &Proxy{Kind: ProxyCommand, Command: "nc %h %p", Bypass: []string{"*.lan"}}
 	if !proxy.Uses("host.example:22") || proxy.Uses("nas.lan:22") {
 		t.Fatal("the bypass list does not apply to a proxy command")
+	}
+}
+
+func TestAProxyCommandFailureIsOneCleanLine(t *testing.T) {
+	long := strings.Repeat("é", 200) // 400 bytes: a cut at 300 falls inside no letter
+	got := lastLine("first\n\x1b[31mred\x1b[0m" + long)
+	if strings.ContainsRune(got, '\x1b') || !utf8.ValidString(got) {
+		t.Fatalf("lastLine = %q, want no control characters and valid UTF-8", got)
 	}
 }

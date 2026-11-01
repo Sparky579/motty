@@ -33,6 +33,9 @@ description: 本地、远程、SOCKS5 和 HTTP CONNECT 规则，跳板路由、�
 - 从 SSH 配置导入的 `ProxyCommand` 会随主机保存，但要打开主机的代理设置并保存后
   才会运行。
 - 通过 `motty mcp-serve` 连接的智能体不会启动代理命令。
+- 从程序坞或访达启动的应用，看到的是图形应用的精简 `PATH`，不是你 shell 里的。
+  请写程序的完整路径，例如 `/opt/homebrew/bin/cloudflared`。
+- 以 `-` 开头的主机名或用户名会被拒绝，避免被程序当作选项。
 
 ## X11 转发
 
